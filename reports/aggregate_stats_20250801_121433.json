@@ -1,0 +1,38 @@
+{
+    "total_rows_evaluated": 25,
+    "average_final_score": 4.522,
+    "median_final_score": 1.0,
+    "std_dev_final_score": 4.866061891646399,
+    "per_dimension_stats": {
+        "Relevance": {
+            "average_score": 4.48,
+            "median_score": 1.0,
+            "std_dev_score": 5.000999900019995
+        },
+        "Groundedness": {
+            "average_score": 4.64,
+            "median_score": 1.0,
+            "std_dev_score": 4.863811948119157
+        },
+        "Completeness": {
+            "average_score": 4.48,
+            "median_score": 1.0,
+            "std_dev_score": 4.805552344250693
+        },
+        "Factual Accuracy": {
+            "average_score": 4.44,
+            "median_score": 0.0,
+            "std_dev_score": 5.033885179461287
+        },
+        "Coherence": {
+            "average_score": 4.64,
+            "median_score": 1.0,
+            "std_dev_score": 4.544960579220316
+        },
+        "Contextual Awareness": {
+            "average_score": 4.4,
+            "median_score": 1.0,
+            "std_dev_score": 4.915960401250876
+        }
+    }
+}

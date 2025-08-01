@@ -1,0 +1,4 @@
+pydantic-ai
+pandas
+python-dotenv
+google-generativeai
