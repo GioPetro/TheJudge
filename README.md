@@ -61,7 +61,7 @@ Final Score = (Relevance * 0.25) + (Groundedness * 0.25) + (Completeness * 0.15)
 
 ## Usage
 
-To run the evaluation, use the `main.py` script from the command line. For reproducible and deterministic results, use the recommended command format with temperature and seed parameters.
+To run the evaluation, use the `main.py` script from the command line. For reproducible and deterministic results, use the recommended command format with temperature = 0.
 
 ### Recommended Command (Deterministic Evaluation)
 
@@ -102,4 +102,4 @@ The input CSV file should contain the following columns:
 
 ## License
 
-This project can only be used by the creator.
+This project can only be used by the creator for commercial reasons.
