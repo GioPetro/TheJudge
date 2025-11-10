@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """
-Plum Reviews Scraper - Simple & Fast
+SmartMoneyPeople Reviews Scraper - Simple & Fast
 Uses only requests + BeautifulSoup4 for maximum speed
+
+USAGE:
+    1. Configure URLs and settings in the CONFIGURATION section below
+    2. Run: python scrape_plum_simple.py
+    3. Or with saved HTML: python scrape_plum_simple.py saved_page.html
+
+REQUIREMENTS:
+    pip install requests beautifulsoup4 pandas openpyxl lxml
 """
 
 import requests
@@ -11,10 +19,33 @@ from datetime import datetime
 import time
 import re
 import sys
+import os
 
-# Configuration
-BASE_URL = "https://smartmoneypeople.com/plum-reviews/product/app"
-OUTPUT_FILE = "plum_reviews.xlsx"
+# ==================== CONFIGURATION ====================
+MIN_REVIEW_YEAR = 2024  # Filter reviews from this year onwards (set to None to get all reviews)
+
+# List of SmartMoneyPeople URLs to scrape
+smp_pages = [
+    "https://smartmoneypeople.com/plum-reviews/product/app",
+    # Add more URLs here, e.g.:
+    # "https://smartmoneypeople.com/monzo-reviews",
+    # "https://smartmoneypeople.com/revolut-reviews",
+]
+
+# Auto-generate clean names from URLs
+smp_names = [
+    re.sub(r'^https?://(www\.)?smartmoneypeople\.com/', '', url)
+       .replace('/', '_')
+       .replace('-reviews', '')
+       .replace('-', '_')
+    for url in smp_pages
+]
+
+# Output directory
+base_path = './'  # Change to your preferred path, e.g., 'C:/Users/yourname/reviews/'
+os.makedirs(base_path, exist_ok=True)
+
+# ======================================================
 
 # Headers to mimic a real browser
 HEADERS = {
@@ -54,6 +85,59 @@ def fetch_page(url, session):
     except Exception as e:
         print(f"Error: {e}")
         return None
+
+
+def parse_review_date(date_string):
+    """Parse review date string to datetime object"""
+    if not date_string:
+        return None
+
+    try:
+        # Try common date formats
+        for fmt in [
+            '%Y-%m-%d',
+            '%d/%m/%Y',
+            '%m/%d/%Y',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S.%fZ',
+            '%d %B %Y',
+            '%B %d, %Y',
+        ]:
+            try:
+                return datetime.strptime(date_string.strip(), fmt)
+            except ValueError:
+                continue
+
+        # Try parsing relative dates like "2 days ago"
+        if 'ago' in date_string.lower():
+            return datetime.now()  # Approximate
+
+        # Extract year if possible
+        year_match = re.search(r'20\d{2}', date_string)
+        if year_match:
+            year = int(year_match.group())
+            return datetime(year, 1, 1)
+
+    except Exception as e:
+        print(f"  Warning: Could not parse date '{date_string}': {e}")
+
+    return None
+
+
+def filter_by_year(review):
+    """Check if review meets the year filter criteria"""
+    if MIN_REVIEW_YEAR is None:
+        return True
+
+    date_str = review.get('date')
+    if not date_str:
+        return True  # Include reviews without dates
+
+    parsed_date = parse_review_date(date_str)
+    if parsed_date:
+        return parsed_date.year >= MIN_REVIEW_YEAR
+
+    return True  # Include if can't parse
 
 
 def extract_reviews(soup):
@@ -179,16 +263,18 @@ def extract_reviews(soup):
 
         # Only add if has meaningful content
         if any([review.get('review_text'), review.get('rating'), review.get('review_title')]):
-            reviews.append(review)
+            # Apply date filter
+            if filter_by_year(review):
+                reviews.append(review)
 
-            # Show first few for debugging
-            if idx <= 3:
-                print(f"\n  Review {idx}:")
-                for key, val in review.items():
-                    if key == 'review_text':
-                        print(f"    {key}: {str(val)[:60]}...")
-                    else:
-                        print(f"    {key}: {val}")
+                # Show first few for debugging
+                if len(reviews) <= 3:
+                    print(f"\n  Review {len(reviews)}:")
+                    for key, val in review.items():
+                        if key == 'review_text':
+                            print(f"    {key}: {str(val)[:60]}...")
+                        else:
+                            print(f"    {key}: {val}")
 
     return reviews
 
@@ -223,13 +309,13 @@ def find_pagination(soup, current_url):
     return pagination_urls
 
 
-def scrape_reviews():
+def scrape_reviews(base_url):
     """Main scraping function"""
     all_reviews = []
     session = requests.Session()
 
     visited_urls = set()
-    urls_to_visit = [BASE_URL]
+    urls_to_visit = [base_url]
 
     while urls_to_visit:
         url = urls_to_visit.pop(0)
@@ -268,7 +354,7 @@ def scrape_reviews():
     return all_reviews
 
 
-def save_to_excel(reviews, filename=OUTPUT_FILE):
+def save_to_excel(reviews, filename, source_url):
     """Save reviews to Excel"""
     if not reviews:
         print("\n❌ No reviews to save!")
@@ -276,7 +362,7 @@ def save_to_excel(reviews, filename=OUTPUT_FILE):
 
     df = pd.DataFrame(reviews)
     df['scraped_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    df['source_url'] = BASE_URL
+    df['source_url'] = source_url
 
     # Reorder columns
     cols = ['review_id', 'date', 'rating', 'reviewer_name', 'review_title',
@@ -291,6 +377,11 @@ def save_to_excel(reviews, filename=OUTPUT_FILE):
     print(f"\n{'='*60}")
     print(f"✅ SUCCESS! Saved {len(reviews)} reviews to {filename}")
     print(f"{'='*60}")
+
+    # Date filter info
+    if MIN_REVIEW_YEAR:
+        print(f"📅 Date filter: Reviews from {MIN_REVIEW_YEAR} onwards")
+
     print(f"\nColumns: {', '.join(df.columns.tolist())}")
 
     if 'rating' in df.columns:
@@ -299,13 +390,23 @@ def save_to_excel(reviews, filename=OUTPUT_FILE):
         ratings = df['rating'].dropna()
         if len(ratings) > 0:
             print(f"  Average rating: {ratings.mean():.2f}/5.0")
-            print(f"  Rating counts:\n{df['rating'].value_counts().sort_index()}")
+            print(f"  Rating distribution:")
+            for rating, count in df['rating'].value_counts().sort_index().items():
+                print(f"    {'★' * int(rating)}: {count} reviews")
+
+    # Date range
+    if 'date' in df.columns:
+        dates_parsed = df['date'].apply(parse_review_date).dropna()
+        if len(dates_parsed) > 0:
+            print(f"\n📅 Date range:")
+            print(f"  Oldest: {dates_parsed.min().strftime('%Y-%m-%d')}")
+            print(f"  Newest: {dates_parsed.max().strftime('%Y-%m-%d')}")
 
     if 'review_text' in df.columns:
         lengths = df['review_text'].str.len()
-        print(f"  Avg review length: {lengths.mean():.0f} characters")
+        print(f"\n📏 Avg review length: {lengths.mean():.0f} characters")
 
-    print(f"\n📝 First review:")
+    print(f"\n📝 Sample review:")
     for col in ['date', 'rating', 'reviewer_name', 'review_title']:
         if col in df.columns and len(df) > 0:
             print(f"  {col}: {df[col].iloc[0]}")
@@ -326,36 +427,77 @@ def load_from_file(filepath):
 
 
 def main():
-    print("="*60)
-    print("PLUM REVIEWS SCRAPER (Fast - BS4 Only)")
-    print("="*60)
-    print(f"Target: {BASE_URL}")
-    print(f"Output: {OUTPUT_FILE}\n")
+    print("="*70)
+    print("SMARTMONEYPEOPLE REVIEWS SCRAPER (Fast - BS4 Only)")
+    print("="*70)
+    print(f"Date filter: Reviews from {MIN_REVIEW_YEAR or 'ALL YEARS'} onwards")
+    print(f"URLs to scrape: {len(smp_pages)}")
+    print(f"Output directory: {base_path}")
+    print("="*70 + "\n")
 
     # Check if user provided an HTML file
     if len(sys.argv) > 1:
         html_file = sys.argv[1]
         print(f"Using local HTML file: {html_file}\n")
         reviews = load_from_file(html_file)
-    else:
-        # Scrape from web
-        reviews = scrape_reviews()
 
-    if not reviews:
-        print("\n❌ No reviews extracted!")
-        print("\nIf you got a 403 error, the site is blocking bots.")
-        print("\nManual workaround:")
-        print("1. Open URL in browser: " + BASE_URL)
-        print("2. Scroll to load all reviews")
-        print("3. Right-click → Save As → Complete webpage")
-        print("4. Run: python scrape_plum_simple.py <saved_file.html>")
+        # Save with generic name
+        output_file = os.path.join(base_path, 'reviews_from_file.xlsx')
+        if save_to_excel(reviews, output_file, 'local_file'):
+            print(f"\n✅ Done! Saved to '{output_file}'")
+        sys.exit(0)
+
+    # Scrape all configured URLs
+    all_results = []
+
+    for idx, (url, name) in enumerate(zip(smp_pages, smp_names), 1):
+        print(f"\n{'='*70}")
+        print(f"[{idx}/{len(smp_pages)}] Processing: {name}")
+        print(f"URL: {url}")
+        print("="*70)
+
+        # Scrape reviews
+        reviews = scrape_reviews(url)
+
+        if not reviews:
+            print(f"\n⚠ No reviews extracted from {name}!")
+            print("\nIf you got a 403 error, the site is blocking bots.")
+            print("\nManual workaround:")
+            print(f"1. Open URL in browser: {url}")
+            print("2. Scroll to load all reviews")
+            print("3. Right-click → Save As → Complete webpage")
+            print(f"4. Run: python scrape_plum_simple.py <saved_file.html>")
+            continue
+
+        # Save to Excel
+        output_file = os.path.join(base_path, f'{name}_reviews.xlsx')
+        if save_to_excel(reviews, output_file, url):
+            all_results.append({
+                'name': name,
+                'url': url,
+                'reviews': len(reviews),
+                'file': output_file
+            })
+
+        # Be respectful between different sites
+        if idx < len(smp_pages):
+            print("\nWaiting 5 seconds before next URL...")
+            time.sleep(5)
+
+    # Summary
+    print("\n" + "="*70)
+    print("SCRAPING SUMMARY")
+    print("="*70)
+
+    if not all_results:
+        print("❌ No reviews were successfully scraped from any URL")
         sys.exit(1)
 
-    # Save to Excel
-    if save_to_excel(reviews):
-        print(f"\n✅ Done! Open '{OUTPUT_FILE}' to view reviews.")
-    else:
-        sys.exit(1)
+    for result in all_results:
+        print(f"✅ {result['name']}: {result['reviews']} reviews → {result['file']}")
+
+    print(f"\n📊 Total: {sum(r['reviews'] for r in all_results)} reviews from {len(all_results)} sources")
+    print("="*70)
 
 
 if __name__ == "__main__":
